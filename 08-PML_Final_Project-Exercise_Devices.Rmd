@@ -1,0 +1,126 @@
+---
+title: "PML Final Project - Exercise Devices"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(RColorBrewer)
+library(rattle)
+library(randomForest)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Backgound of Project
+
+######Using devices such as Jawbone Up, Nike FuelBand, and Fitbitit is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+
+######More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+
+### Get Needed Data 
+```{r getNeededData}
+ 
+set.seed(12345)
+
+trainUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+training <- read.csv(url(trainUrl), 
+                     header = TRUE, 
+                     as.is = TRUE,
+                     stringsAsFactors = FALSE, 
+                     sep = ',', 
+                     na.strings=c("NA","#DIV/0!",""))
+testing <- read.csv(url(testUrl), 
+                    header = TRUE, 
+                    as.is = TRUE,
+                    stringsAsFactors = FALSE, 
+                    sep = ',', 
+                    na.strings=c("NA","#DIV/0!",""))
+
+```
+
+
+### Clean up the data and variables for processing
+```{r cleanData}
+training$classe <- as.factor(training$classe)
+
+## Clean up variables
+## Removes columns with NA as the data
+findNA <- apply(training, 2, function(x){sum(is.na(x))})
+training <- training[, which(findNA == 0)]
+
+findNA <- apply(testing, 2, function(x){sum(is.na(x))})
+testing <- testing[, which(findNA == 0)]
+
+v <- which(lapply(training, class) %in% "numeric")
+preObj <- preProcess(training[,v], 
+                     method=c('knnImpute', 'center', 'scale'))
+trainLess1 <- predict(preObj, 
+                      training[,v])
+trainLess1$classe <- training$classe
+
+testLess1 <- predict(preObj, 
+                     testing[,v])
+
+## Remove the non-zero variables
+## This is so to get rid of small amounts that will effect the out
+## come of the prediction. Only want good numbers to be used in the
+## predictions
+nzv <- nearZeroVar(trainLess1, saveMetrics=TRUE)
+trainLess1 <- trainLess1[, nzv$nzv==FALSE]
+nzv <- nearZeroVar(testLess1,saveMetrics=TRUE)
+testLess1 <- testLess1[,nzv$nzv==FALSE]
+
+##str(training)
+##str(testing)
+```
+
+### Slice Data to create training and cross validation data set
+```{r sliceData}
+set.seed(12345)
+
+inTrain = createDataPartition(trainLess1$classe, 
+                              p = 0.75, 
+                              list=FALSE)
+training = trainLess1[inTrain,]
+crossValidation = trainLess1[-inTrain,]
+```
+
+### Train Model - Random Forest
+```{r trainMdlRandomForest}
+modFit <- train(classe ~., 
+                method="rf", 
+                data=training, 
+                trControl=trainControl(method='cv'), 
+                number=5, 
+                allowParallel=TRUE )
+
+print(modFit)
+```
+
+### Accuracy on Train and Cross Validation data sets
+```{r accuracyOfTrainAndCVSets}
+## Training set
+trainingPred <- predict(modFit, 
+                        training)
+confusionMatrix(trainingPred, 
+                training$classe)
+
+## Cross Validation data set
+crossVldPred <- predict( modFit, 
+                         crossValidation)
+confusionMatrix(crossVldPred, 
+                crossValidation$classe)
+```
+
+### Results of prediction
+```{r resultPred}
+resultPred <- predict(modFit, testLess1)
+resultPred
+```
+
+
